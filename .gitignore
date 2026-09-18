@@ -1,0 +1,17 @@
+# Local machine diagnostics and historical installation records
+/使用说明与诊断.md
+/installation-result.json
+/launcher-update-result.json
+/runtime-verification*.json
+/*test-results.txt
+
+# Generated logs, scratch files, and local credentials
+*.log
+*.log.*
+*.lock
+*.tmp
+.env
+.env.*
+!.env.example
+/work/
+/.publish/
