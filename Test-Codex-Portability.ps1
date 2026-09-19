@@ -5,6 +5,23 @@ $portable=Join-Path $root '中文 portable folder'
 $elsewhere=Join-Path $root 'other working directory'
 $null=[IO.Directory]::CreateDirectory($portable)
 $null=[IO.Directory]::CreateDirectory($elsewhere)
+# Hosted Windows can expose TEMP as RUNNER~1 while PSScriptRoot expands it.
+# Normalize the existing fixture root before comparing paths, not the result
+# being tested, so the checks still detect a log in the wrong directory.
+Add-Type -TypeDefinition @'
+using System.Runtime.InteropServices;
+using System.Text;
+public static class PortableTestPath {
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+    public static extern uint GetLongPathName(string path, StringBuilder output, uint capacity);
+}
+'@
+$pathBuffer=[Text.StringBuilder]::new(32768)
+$pathLength=[PortableTestPath]::GetLongPathName($root,$pathBuffer,32768)
+if ($pathLength -eq 0 -or $pathLength -ge 32768) { throw 'Cannot normalize fixture path' }
+$root=$pathBuffer.ToString()
+$portable=Join-Path $root '中文 portable folder'
+$elsewhere=Join-Path $root 'other working directory'
 foreach ($name in @('Codex-SelfHeal.ps1','Codex-Progress.ps1','Codex-Cleanup.ps1')) {
     [IO.File]::Copy((Join-Path $PSScriptRoot $name),(Join-Path $portable $name))
 }

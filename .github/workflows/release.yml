@@ -23,7 +23,7 @@ jobs:
         shell: powershell
     steps:
       - uses: actions/checkout@v4
-      - name: Check repair and portability
+      - name: Check repair, portability, and cleanup
         run: |
           $tests = @('SelfHeal', 'Progress', 'Summary', 'Portability', 'Launch', 'Cleanup')
           foreach ($test in $tests) {
