@@ -13,7 +13,7 @@ function Assert($ok,$message) { if (-not $ok) { throw "FAIL: $message" }; $scrip
 Push-Location $elsewhere
 try {
     . (Join-Path $portable 'Codex-SelfHeal.ps1') -NoGui
-    Assert ($script:LogPath -eq (Join-Path $portable 'logs\self-heal.log')) 'Default log follows relocated script with Unicode and spaces'
+    Assert ($script:LogPath -eq (Join-Path $portable 'logs\self-heal.log')) ("Default log follows relocated script with Unicode and spaces; actual=[$script:LogPath], expected=[$(Join-Path $portable 'logs\self-heal.log')]")
     Assert ((Resolve-LauncherLogPath 'custom\output.log') -eq (Join-Path $portable 'custom\output.log')) 'Relative log path ignores current working directory'
     $absolute=Join-Path $root 'absolute.log'
     Assert ((Resolve-LauncherLogPath $absolute) -eq $absolute) 'Explicit absolute log remains unchanged'

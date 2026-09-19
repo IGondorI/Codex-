@@ -8,7 +8,7 @@
 
 ## 普通用户下载
 
-打开 [最新 Release](https://github.com/IGondorI/Codex-/releases/latest)，在 **Assets** 中下载 `Codex-SelfHeal-v版本号-windows.zip`。
+打开 [最新 Release](https://github.com/IGondorI/Codex-SelfHeal/releases/latest)，在 **Assets** 中下载 `Codex-SelfHeal-v版本号-windows.zip`。
 
 1. 将 ZIP **完整解压**到可写文件夹，不要在压缩包里直接运行。
 2. 保存工作并正常退出 Codex。

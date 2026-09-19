@@ -3,7 +3,7 @@ name: Publish portable Windows release
 on:
   push:
     branches: [main]
-    paths: ['release/version.txt']
+    paths: ['release/version.txt', '.github/workflows/release.yml']
   workflow_dispatch:
 
 permissions:
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   release:
-    if: github.repository == 'IGondorI/Codex-' && github.ref == 'refs/heads/main'
+    if: github.repository == 'IGondorI/Codex-SelfHeal' && github.ref == 'refs/heads/main'
     runs-on: windows-latest
     timeout-minutes: 15
     defaults:

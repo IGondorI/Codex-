@@ -32,6 +32,6 @@ Codex 必须使用的运行环境与备份仍保存在 Windows 当前用户的�
 
 遇到问题
 先保留终端显示的结果，再查看日志。向项目反馈时请检查并隐去日志中的个人路径等信息。
-项目：https://github.com/IGondorI/Codex-
-下载：https://github.com/IGondorI/Codex-/releases/latest
-反馈：https://github.com/IGondorI/Codex-/issues
+项目：https://github.com/IGondorI/Codex-SelfHeal
+下载：https://github.com/IGondorI/Codex-SelfHeal/releases/latest
+反馈：https://github.com/IGondorI/Codex-SelfHeal/issues
