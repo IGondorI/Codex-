@@ -12,16 +12,18 @@ param(
     [switch]$NoGui,
     [switch]$RepairIncomplete,
     [switch]$TryCliFallback,
+    [ValidatePattern('^[A-Za-z0-9._-]+$')][string]$PackageName = 'OpenAI.Codex',
     [ValidateRange(30,300)][int]$TimeoutSeconds = 90,
-    [string]$LogPath = (Join-Path $env:LOCALAPPDATA 'OpenAI\Codex\self-heal.log')
+    [string]$LogPath = 'logs\self-heal.log'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$script:LogPath = $LogPath
+$script:LauncherRoot = $PSScriptRoot
+$script:LogPath = if ([IO.Path]::IsPathRooted($LogPath)) { $LogPath } else { Join-Path $script:LauncherRoot $LogPath }
 $script:Base = Join-Path $env:LOCALAPPDATA 'OpenAI\Codex'
 $script:RuntimeRoot = Join-Path $script:Base 'runtimes\cua_node'
 $script:Required = @('manifest.json','bin/node.exe','bin/node_repl.exe')
-$script:LauncherVersion = '1.1.0'
+$script:LauncherVersion = '1.2.0'
 . (Join-Path $PSScriptRoot 'Codex-Progress.ps1')
 . (Join-Path $PSScriptRoot 'Codex-Cleanup.ps1')
 
@@ -45,6 +47,33 @@ function Assert-SafePath([string]$Path,[string]$Root) {
         if ($parent -eq $cursor) { break }; $cursor=$parent
     }
     return $p
+}
+function Resolve-LauncherLogPath([string]$Path) {
+    if ([string]::IsNullOrWhiteSpace($Path)) { throw 'LogPath must name a writable log file.' }
+    if (-not [IO.Path]::IsPathRooted($Path)) { $Path=Join-Path $script:LauncherRoot $Path }
+    return [IO.Path]::GetFullPath($Path)
+}
+function Assert-LauncherEnvironment {
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'Unsupported platform: Windows is required.' }
+    if ($PSVersionTable.PSEdition -ne 'Desktop') { throw 'Use Windows PowerShell 5.1 via Codex-SelfHeal.cmd.' }
+    foreach ($command in @('Get-AppxPackage','Get-AppxPackageManifest','Get-CimInstance')) {
+        if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { throw "Required Windows command unavailable: $command" }
+    }
+    if (-not [IO.File]::Exists((Join-Path $env:SystemRoot 'System32\xcopy.exe'))) { throw 'Required Windows utility unavailable: xcopy.exe' }
+}
+function Enter-RuntimeMutex([string]$Root) {
+    # One OS mutex for the same user runtime, regardless of launcher/log location.
+    # Global scope also covers a second Windows session; no persistent lock file.
+    $sha=[Security.Cryptography.SHA256]::Create()
+    try { $key=([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes([IO.Path]::GetFullPath($Root).TrimEnd('\').ToUpperInvariant())))).Replace('-','') }
+    finally { $sha.Dispose() }
+    $mutex=[Threading.Mutex]::new($false,('Global\CodexSelfHeal-'+$key))
+    $owned=$false
+    try {
+        try { $owned=$mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $owned=$true }
+        if (-not $owned) { throw 'Another launcher is already working on this runtime.' }
+        return $mutex
+    } catch { $mutex.Dispose(); throw }
 }
 function Write-EventSummary([string]$Event,$Data) {
     $label='信息'; $color='Cyan'; $message=$null
@@ -106,7 +135,9 @@ function Write-EventSummary([string]$Event,$Data) {
         'diagnose_complete' { $label='诊断'; $message='检查结束；本次没有启动、修复或清理操作。' }
         'error' {
             $label='失败'; $color='Red'
-            if ($Data.message -match 'denied|拒绝访问|Unauthorized') { $message='权限不足，操作已停止。请在当前用户的普通 Windows 会话中运行启动器。' }
+            if ($Data.message -match 'Another launcher') { $message='另一份启动器正在处理同一个运行环境，请等待它结束。' }
+            elseif ($Data.message -match 'Windows PowerShell 5.1|Unsupported platform|Required Windows') { $message='运行环境不满足要求。请在 Windows 上通过 Codex-SelfHeal.cmd 运行，并查看日志中的具体缺失项。' }
+            elseif ($Data.message -match 'denied|拒绝访问|Unauthorized') { $message='权限不足，操作已停止。请在当前用户的普通 Windows 会话中运行启动器。' }
             elseif ($Data.message -match 'Close Codex|Active/possibly healthy|processes remain') { $message='检测到应用仍在运行，请正常退出 Codex 后重试。' }
             elseif ($Data.message -match 'verification|mismatch|omission') { $message='文件完整性检查失败，未将本次副本发布为正式运行环境。' }
             elseif ($Data.message -match 'Package updated|Package/process changed') { $message='安装包或进程状态发生变化，操作已停止，请稍后重试。' }
@@ -172,7 +203,7 @@ function Get-RuntimeIdentity([string]$Source) {
     finally { $sha.Dispose() }
 }
 function Find-Package {
-    $packages=@(Get-AppxPackage -Name OpenAI.Codex -ErrorAction Stop | Where-Object {-not $_.IsResourcePackage})
+    $packages=@(Get-AppxPackage -Name $PackageName -ErrorAction Stop | Where-Object {-not $_.IsResourcePackage})
     if ($packages.Count -ne 1) { throw "AppX query returned $($packages.Count) packages. Run the .cmd in your normal signed-in Windows session; no guessed package path will be used." }
     $p=$packages[0]
     if ([string]$p.Status -ne 'Ok') { throw "AppX status is $($p.Status); runtime workaround is not applicable." }
@@ -375,7 +406,8 @@ function Start-DirectApp($Package,[string]$CliPath) {
     try { return [int]$process.Id } finally { $process.Dispose() }
 }
 function Start-RegisteredApp([string]$Aumid) {
-    if ($Aumid -notmatch '^OpenAI\.Codex_[A-Za-z0-9]+![A-Za-z0-9._-]+$') { throw 'Unexpected AppX application identity.' }
+    $identityPattern='^'+[regex]::Escape($PackageName)+'_[A-Za-z0-9]+![A-Za-z0-9._-]+$'
+    if ($Aumid -notmatch $identityPattern) { throw 'Unexpected AppX application identity.' }
     if (-not ('CodexSelfHeal.AppActivation' -as [type])) {
         Add-Type -TypeDefinition @'
 using System;
@@ -485,30 +517,46 @@ function Invoke-Launcher {
 
 # Dot-sourcing loads functions for isolated tests without performing any action.
 if ($MyInvocation.InvocationName -eq '.') { return }
-$lock=$null; $exitCode=1
+$lock=$null; $runtimeMutex=$null; $exitCode=1; $logReady=$false; $openingLog=$false
 try {
-    $logFull=Assert-SafePath $LogPath (Split-Path -Parent ([IO.Path]::GetFullPath($LogPath)))
+    $script:LogPath=Resolve-LauncherLogPath $LogPath
+    $runtimeMutex=Enter-RuntimeMutex $script:RuntimeRoot
+    $openingLog=$true
+    $logFull=Assert-SafePath $script:LogPath (Split-Path -Parent $script:LogPath)
     $null=[IO.Directory]::CreateDirectory((Split-Path $logFull))
     $script:LogPath=$logFull
-    # A filesystem lock prevents simultaneous launches/repairs, including across sessions.
-    $lock=[IO.File]::Open(($logFull+'.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+    # Protect a shared custom log too; the lock file disappears when its handle closes.
+    $lock=[IO.FileStream]::new(($logFull+'.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None,4096,[IO.FileOptions]::DeleteOnClose)
+    $null=[IO.File]::AppendAllText($logFull,'',[Text.UTF8Encoding]::new($false))
+    $logReady=$true; $openingLog=$false
     if ((Test-Path -LiteralPath $logFull) -and (Get-Item -LiteralPath $logFull).Length -gt 5MB) {
         $archive=Assert-SafePath ($logFull+'.1') (Split-Path $logFull)
         [IO.File]::Copy($logFull,$archive,$true); [IO.File]::WriteAllText($logFull,'')
     }
+    Assert-LauncherEnvironment
     $exitCode=Invoke-Launcher
 } catch {
+    $failure=$_
     try {
-        $details=Get-LaunchError $_
+        $details=Get-LaunchError $failure
         $details['repairNotAssumedSuccessful']=$true
-        $details['scriptLine']=$_.InvocationInfo.ScriptLineNumber
+        $details['scriptLine']=$failure.InvocationInfo.ScriptLineNumber
         $details['launcherVersion']=$script:LauncherVersion
-        Write-Event 'error' $details
-    } catch { Write-Error $_ }
+        if ($logReady) { Write-Event 'error' $details }
+        else {
+            if ($openingLog) { Write-Host '  [失败] 日志无法创建或写入。请将脚本放到可写文件夹，或使用 -LogPath 指定可写位置。' -ForegroundColor Yellow }
+            else { Write-EventSummary 'error' $details }
+        }
+    } catch {
+        Write-Host ('  [失败] '+$failure.Exception.Message) -ForegroundColor Red
+        Write-Host '  本次错误未能写入日志，请保留终端提示。' -ForegroundColor Yellow
+    }
     $exitCode=1
 } finally {
     if ($lock) {$lock.Dispose()}
+    if ($runtimeMutex) { $runtimeMutex.ReleaseMutex(); $runtimeMutex.Dispose() }
     Write-Host ''
     Write-Host ("  日志路径："+$script:LogPath) -ForegroundColor Cyan
+    if (-not $logReady) { Write-Host '  本次未写入日志。' -ForegroundColor Yellow }
 }
 exit $exitCode

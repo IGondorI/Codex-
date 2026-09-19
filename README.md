@@ -1,5 +1,7 @@
 # Codex SelfHeal
 
+当前脚本版本：1.2.0（日志随脚本目录保存，增强路径兼容性及跨副本并发保护）。
+
 用于 Windows 上 Codex 运行环境部署不完整、启动后没有显示窗口等特定故障的辅助启动器。它检查安装包、进程和日志，在满足条件时修复 `cua_node`，然后重新尝试启动。
 
 这是个人维护的辅助脚本，不是 OpenAI 官方工具。它补救文件部署问题，不修改 Codex 的更新机制，也不能解决所有“没有窗口”的故障。
@@ -17,10 +19,10 @@
 
 终端显示中文状态摘要；复制时显示文件进度、百分比和当前路径。运行结束后，无论成功或失败都会显示日志路径，双击入口会等待按键关闭。
 
-完整 JSON 日志默认保存在：
+完整 JSON 日志默认保存在脚本自己的目录下（与当前终端工作目录无关）：
 
 ```text
-%LOCALAPPDATA%\OpenAI\Codex\self-heal.log
+<脚本目录>\logs\self-heal.log
 ```
 
 日志可能包含本机路径等诊断信息，提交问题时请先检查需要分享的内容。
@@ -41,11 +43,22 @@
 | `-Diagnose` | 只检查和记录日志，不启动、停止、修复或清理应用。 |
 | `-RepairIncomplete` | 应用退出后，允许修复已存在但不完整、且没有 staging 残留的正式运行环境。 |
 | `-TimeoutSeconds` | 每轮等待启动的时间，默认 90 秒，范围 30–300 秒。 |
-| `-LogPath` | 自定义完整日志路径。 |
+| `-LogPath` | 自定义日志路径；相对路径以脚本目录为基准。目录不可写时明确报错，不自动写到其他位置。 |
+| `-PackageName` | 指定注册的应用包名称，默认 `OpenAI.Codex`；仍需满足受支持的清单和运行环境结构。 |
 | `-TryCliFallback` | 在特定日志证据和路径条件满足时，额外尝试一次临时 CLI 路径重试。 |
 | `-NoGui` | 为兼容旧用法保留；现在始终使用终端进度。 |
 
 ## 工作流程与限制
+
+### 可移植性与写入位置
+
+将四个运行脚本一起复制或解压到可写文件夹即可使用，支持包含空格和中文的路径。入口会在适用时选择本机原生 Windows PowerShell，避免从 32 位宿主调用时的文件系统重定向问题。开始处理前检查 Windows、Windows PowerShell 和必要系统命令；不自动下载依赖，不写注册表，不设置计划任务，不修改系统环境变量。
+
+默认日志和轮转日志 `self-heal.log.1` 位于脚本旁的 `logs` 目录。日志锁文件仅在运行期间存在，结束后自动移除。不同位置的脚本副本也通过同一个运行环境互斥锁防止并发修复。旧版本已写入用户目录的日志不会自动迁移或删除。
+
+Codex 自身需要的运行环境、备份仍写入 `%LOCALAPPDATA%\OpenAI\Codex\runtimes\cua_node`；把它们随意搬到脚本目录会破坏应用对运行环境的查找。因此本工具免安装、工具日志随目录保存，但不承诺完全不写用户目录。移除工具时可删除其文件夹；不要在 Codex 运行时删除应用正在使用的运行环境。
+
+当前仅支持 Windows 上可查询的 AppX/MSIX 安装及已识别的运行环境布局，不支持任意解压版 EXE、macOS 或 Linux。`-PackageName` 允许显式选择包名，不会自动猜测未知安装位置。没有跨设备或 ARM64 的实机验证。
 
 1. 读取当前用户的 AppX 安装信息，确认应用路径和运行环境标识。
 2. 检查进程、启动日志和运行环境文件；已有前端运行证据时不重启。
@@ -79,6 +92,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-Codex-Cleanup.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-Codex-Progress.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-Codex-Summary.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-Codex-Launch.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-Codex-Portability.ps1
 ```
 
 清理检查需要创建测试用目录链接；启动检查会创建一个无害的测试子进程。受限制的运行环境可能拒绝这些操作。测试会在用户临时目录保留诊断用文件。
