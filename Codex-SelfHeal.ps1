@@ -331,7 +331,7 @@ function Repair-Runtime($Package,[string]$Id) {
                     # xcopy announces a file before its write finishes. Reserve
                     # 100% for a successful exit, and throttle console redraws.
                     $percent=[Math]::Min(99,[int][Math]::Floor(100.0*$copyCount/[Math]::Max(1,$sourceInventory.Count)))
-                    if ($copyCount -eq 1 -or $copyCount -eq $sourceInventory.Count -or $progressTimer.ElapsedMilliseconds -ge 100) {
+                    if ($copyCount -eq 1 -or $copyCount -eq $sourceInventory.Count -or $progressTimer.ElapsedMilliseconds -ge 300) {
                         Update-RepairProgress $repairProgress '正在复制文件' $percent $relative ("$copyCount / $($sourceInventory.Count) 个文件")
                         $progressTimer.Restart()
                     }

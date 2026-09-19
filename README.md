@@ -6,6 +6,16 @@
 
 这是个人维护的辅助脚本，不是 OpenAI 官方工具。它补救文件部署问题，不修改 Codex 的更新机制，也不能解决所有“没有窗口”的故障。
 
+## 普通用户下载
+
+打开 [最新 Release](https://github.com/IGondorI/Codex-/releases/latest)，在 **Assets** 中下载 `Codex-SelfHeal-v版本号-windows.zip`。
+
+1. 将 ZIP **完整解压**到可写文件夹，不要在压缩包里直接运行。
+2. 保存工作并正常退出 Codex。
+3. 双击解压后的 **Codex-SelfHeal.cmd**，等待中文提示。
+
+ZIP 中附有“先读我.txt”。不需要安装 Git、Python 或 Node.js；普通使用无需下载 Source code 源码包。
+
 ## 使用
 
 需要 Windows、Windows PowerShell 5.1，以及当前用户已安装并注册的 Codex 应用。无需下载额外依赖或以管理员身份运行。
@@ -18,6 +28,8 @@
 - `Codex-Cleanup.ps1`：有条件的旧运行环境清理。
 
 终端显示中文状态摘要；复制时显示文件进度、百分比和当前路径。运行结束后，无论成功或失败都会显示日志路径，双击入口会等待按键关闭。
+
+进度文本会根据终端宽度限制为单行，过长路径省略前段并保留文件名末尾，避免进度区域因换行反复改变高度。普通复制进度最多约每 300 毫秒刷新一次，首个文件、最后一个文件及阶段切换会及时更新。
 
 完整 JSON 日志默认保存在脚本自己的目录下（与当前终端工作目录无关）：
 
@@ -98,3 +110,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-Codex-Portability
 清理检查需要创建测试用目录链接；启动检查会创建一个无害的测试子进程。受限制的运行环境可能拒绝这些操作。测试会在用户临时目录保留诊断用文件。
 
 退出码：`0` 表示诊断完成或检测到运行就绪证据；`1` 表示操作失败；`2` 表示启动未确认或需要人工处理。仅诊断模式的 `0` 不代表运行环境一定完整。
+
+## 构建发布包
+
+维护者可执行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Build-Release.ps1`，在 `dist` 获得 ZIP 和 SHA-256 校验文件。发布包使用固定文件清单，仅含四个运行脚本及中文快速指南，不包含本机日志、测试数据或安装记录。
+
+将 `release/version.txt`、脚本版本与 `release/NOTES.md` 更新并推送到 `main`，GitHub Actions 会在 Windows 上测试、打包并创建 Release。也可在 Actions 中手动运行发布流程。已存在的同版本 Release 不会被覆盖。

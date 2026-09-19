@@ -1,0 +1,46 @@
+name: Publish portable Windows release
+
+on:
+  push:
+    branches: [main]
+    paths: ['release/version.txt']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: portable-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'IGondorI/Codex-' && github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check repair and portability
+        run: |
+          $tests = @('SelfHeal', 'Progress', 'Summary', 'Portability', 'Launch', 'Cleanup')
+          foreach ($test in $tests) {
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\Test-Codex-$test.ps1"
+            if ($LASTEXITCODE -ne 0) { throw "Test failed: $test" }
+          }
+      - name: Build and verify ZIP
+        run: |
+          & .\Build-Release.ps1
+          & .\Test-ReleasePackage.ps1
+      - name: Publish release with downloadable assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          $version = (Get-Content -LiteralPath release/version.txt -Raw).Trim()
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid version' }
+          $archive = "dist/Codex-SelfHeal-v$version-windows.zip"
+          gh release create "v$version" $archive "$archive.sha256" --target $env:GITHUB_SHA --title "Codex SelfHeal v$version" --notes-file release/NOTES.md --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed; existing releases are never overwritten.' }

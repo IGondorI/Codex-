@@ -15,4 +15,5 @@
 !.env.example
 /work/
 /logs/
+/dist/
 /.publish/
